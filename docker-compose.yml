@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # SRTLA receiver (uses simple auth config)
+  srtla-receiver:
+    image: datagutt/belabox-receiver:latest
+    container_name: srtla-receiver
+    restart: unless-stopped
+    ports:
+      - "5077:5000/udp"    # SRT ingest (mobile apps send here)
+      - "8177:8181/tcp"    # Private stats
+      - "8277:8282/udp"    # SRT output (OBS pulls from here)
+      - "3077:3000/tcp"    # Public stats (NOALBS uses this)
+    volumes:
+      - ./config/srtla/config.json:/app/config.json  # Simple SRTLA auth config
+    environment:
+      - PUID=1000
+      - PGID=1000
+    networks:
+      - streaming-network
+
+  # Enhanced streaming hub with RTMP (for your GoPro/Moblin streams)
+  streaming-hub:
+    build: ./containers/streaming-core
+    container_name: streaming-hub
+    restart: unless-stopped
+    ports:
+      - "1935:1935/tcp"    # RTMP server (GoPro, Moblin send here)
+      - "8080:8080/tcp"    # RTMP stats
+      - "8554:8554/tcp"    # RTSP server
+    volumes:
+      - ./data/recordings:/recordings
+      - ./config/streaming:/config
+      - /tmp:/tmp
+    environment:
+      - ENABLE_SRT=true
+      - ENABLE_RTMP=true
+      - ENABLE_RTSP=true
+      - MAX_BANDWIDTH=10000
+      - LATENCY_MODE=ultra_low
+      - HARDWARE_ACCEL=auto
+    networks:
+      - streaming-network
+
+  # Database for camera management
+  postgres:
+    image: postgres:15
+    container_name: streaming-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=streaming_hub
+      - POSTGRES_USER=streaming
+      - POSTGRES_PASSWORD=streaming_pass_2024
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - streaming-network
+
+  # Enhanced NOALBS (uses your existing NOALBS config.json)
+  noalbs-enhanced:
+    build: ./containers/noalbs-v3
+    container_name: noalbs-enhanced
+    restart: unless-stopped
+    environment:
+      - OBS_HOST=localhost
+      - OBS_PORT=4455
+      - OBS_PASSWORD=ylHNOegFHknBtssv
+      - TWITCH_USERNAME=715209
+      - TWITCH_OAUTH=oauth:YOUR_OAUTH_HERE
+      # Monitor both SRTLA stats AND RTMP stats
+      - SRTLA_STATS_URL=http://srtla-receiver:3000/stats?streamer=belabox&key=belabox
+      - RTMP_STATS_URL=http://streaming-hub:8080/stat
+    volumes:
+      - ./config.json:/app/config/noalbs-config.json  # Your existing NOALBS config
+      - ./config/noalbs:/app/config
+    depends_on:
+      - srtla-receiver
+      - streaming-hub
+    networks:
+      - streaming-network
+
+  # Simple web interface for adding cameras/streams
+  frontend:
+    build: ./frontend
+    container_name: streaming-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - SRTLA_STATS_URL=http://localhost:3077/stats
+      - RTMP_STATS_URL=http://localhost:8080/stat
+      - NOALBS_CONFIG_PATH=/app/config.json
+    volumes:
+      - ./config.json:/app/config.json  # Mount your NOALBS config for editing
+    networks:
+      - streaming-network
+
+networks:
+  streaming-network:
+    driver: bridge
