@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Image 1: SRT Server (replaces your current SRTLA receiver)
+  # Image 1: SRT Server (your mobile streams)
   srt-server:
     image: datagutt/belabox-receiver:latest
     container_name: srt-server
@@ -9,7 +9,7 @@ services:
     ports:
       - "5077:5000/udp"    # SRT ingest (mobile apps send here)
       - "8177:8181/tcp"    # Private stats
-      - "8277:8282/udp"    # SRT output (OBS pulls from here)
+      - "8277:8282/udp"    # SRT output (OBS pulls from here) 
       - "3077:3000/tcp"    # Public stats (NOALBS uses this)
     volumes:
       - ./config/srtla/config.json:/app/config.json
@@ -19,7 +19,7 @@ services:
     networks:
       - streaming-network
 
-  # Image 2: RTMP Server (uses existing nginx-rtmp image)
+  # Image 2: RTMP Server (your GoPro/desktop streams)
   rtmp-server:
     image: tiangolo/nginx-rtmp:latest
     container_name: rtmp-server
@@ -33,25 +33,40 @@ services:
     networks:
       - streaming-network
 
-  # Image 3: PostgreSQL + Elixir Backend (combined in one image)
-  postgres-elixir:
+  # Image 3: Supabase Realtime (PostgreSQL + Real-time streaming management)
+  supabase-realtime:
     build: ./containers/postgres-elixir
-    container_name: postgres-elixir
+    container_name: supabase-realtime
     restart: unless-stopped
     ports:
       - "5432:5432"    # PostgreSQL
-      - "4000:4000"    # Elixir API
+      - "4000:4000"    # Realtime API + WebSocket
     environment:
-      - POSTGRES_DB=streaming_hub
-      - POSTGRES_USER=streaming
-      - POSTGRES_PASSWORD=streaming_pass_2024
-      - DATABASE_URL=postgres://streaming:streaming_pass_2024@localhost:5432/streaming_hub
-      - SECRET_KEY_BASE=your_secret_key_change_in_production
-      - PHX_HOST=localhost
+      # Database config
+      - DATABASE_URL=postgres://realtime:realtime_pass_2024@localhost:5432/realtime_dev
+      - DB_HOST=localhost
+      - DB_PORT=5432
+      - DB_USER=realtime
+      - DB_PASSWORD=realtime_pass_2024
+      - DB_NAME=realtime_dev
+      
+      # Realtime config
+      - SECRET_KEY_BASE=your_secret_key_change_in_production_make_it_very_long
+      - JWT_SECRET=your_jwt_secret_for_realtime_auth
       - PORT=4000
+      - PHX_HOST=localhost
+      - PHX_SERVER=true
+      
+      # Streaming hub config
+      - ENABLE_CAMERA_MANAGEMENT=true
+      - SRT_STATS_URL=http://srt-server:3000/stats
+      - RTMP_STATS_URL=http://rtmp-server:8080/stat
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
-      - ./config:/app/config
+      - ./data/realtime:/app/data
+    depends_on:
+      - srt-server
+      - rtmp-server
     networks:
       - streaming-network
 
