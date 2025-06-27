@@ -12,7 +12,7 @@ services:
       - "8277:8282/udp"    # SRT output (OBS pulls from here) 
       - "3077:3000/tcp"    # Public stats (NOALBS uses this)
     volumes:
-      - ./config/srtla/config.json:/app/config.json
+      - ./config/srtla/config.json:/app/config.json  # CORRECT MAPPING!
     environment:
       - PUID=1000
       - PGID=1000
@@ -39,7 +39,7 @@ services:
     container_name: supabase-realtime
     restart: unless-stopped
     ports:
-      - "5433:5432"    # PostgreSQL (CHANGED: was 5432, now 5433)
+      - "5433:5432"    # PostgreSQL (FIXED PORT CONFLICT)
       - "4000:4000"    # Realtime API + WebSocket
     environment:
       # Database config - KEEP INTERNAL PORT AS 5432
