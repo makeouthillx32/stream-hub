@@ -39,10 +39,10 @@ services:
     container_name: supabase-realtime
     restart: unless-stopped
     ports:
-      - "5432:5432"    # PostgreSQL
+      - "5433:5432"    # PostgreSQL (CHANGED: was 5432, now 5433)
       - "4000:4000"    # Realtime API + WebSocket
     environment:
-      # Database config
+      # Database config - KEEP INTERNAL PORT AS 5432
       - DATABASE_URL=postgres://realtime:realtime_pass_2024@localhost:5432/realtime_dev
       - DB_HOST=localhost
       - DB_PORT=5432
