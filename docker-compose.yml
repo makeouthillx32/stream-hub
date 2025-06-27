@@ -1,54 +1,108 @@
 version: '3.8'
 
 services:
-  # Image 1: SRT Server (your mobile streams)
+  # ULTIMATE SRT Server - GPU Accelerated
   srt-server:
-    image: datagutt/belabox-receiver:latest
+    image: ghcr.io/openirl/srtla-receiver:latest
     container_name: srt-server
     restart: unless-stopped
-    ports:
-      - "5077:5000/udp"    # SRT ingest (mobile apps send here)
-      - "8177:8181/tcp"    # Private stats
-      - "8277:8282/udp"    # SRT output (OBS pulls from here) 
-      - "3077:3000/tcp"    # Public stats (NOALBS uses this)
-    volumes:
-      - ./config/srtla/config.json:/app/config.json  # CORRECT MAPPING!
+    
+    # GPU ACCESS for hardware acceleration
+    runtime: nvidia
     environment:
-      - PUID=1000
-      - PGID=1000
-    networks:
-      - streaming-network
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+      
+    # PERFORMANCE OPTIMIZATIONS
+    privileged: true
+    ipc: host
+    
+    # NETWORK OPTIMIZATIONS for WiFi 7 & 10Gig
+    network_mode: host  # Best performance - direct host networking
+    sysctls:
+      # TCP optimizations for high-speed networking
+      - net.core.rmem_max=134217728          # 128MB receive buffer
+      - net.core.wmem_max=134217728          # 128MB send buffer  
+      - net.core.netdev_max_backlog=30000    # High speed packet processing
+      - net.ipv4.tcp_rmem=4096 87380 134217728
+      - net.ipv4.tcp_wmem=4096 65536 134217728
+      - net.ipv4.tcp_congestion_control=bbr  # BBR congestion control
+      - net.core.default_qdisc=fq           # Fair queuing
+      # UDP optimizations for SRTLA
+      - net.core.rmem_default=134217728
+      - net.core.wmem_default=134217728
+      
+    # CPU PERFORMANCE - Pin to fast cores
+    cpuset: "0-7"  # Use first 8 cores (adjust based on your CPU)
+    mem_limit: 8g   # 8GB RAM limit
+    memswap_limit: 8g
+    
+    volumes:
+      # GPU device access
+      - /dev/dri:/dev/dri:rw
+      # Performance monitoring
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    
+    # REMOVE volume mapping - let container use default config
+    # volumes:
+      # - ./config/srtla/config.json:/app/config.json
 
-  # Image 2: RTMP Server (your GoPro/desktop streams)
+  # HIGH-PERFORMANCE RTMP Server with GPU encoding
   rtmp-server:
     image: tiangolo/nginx-rtmp:latest
     container_name: rtmp-server
     restart: unless-stopped
+    
+    # GPU ACCESS
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+    
+    # PERFORMANCE 
+    privileged: true
+    cpuset: "8-11"  # Use different cores than SRT server
+    mem_limit: 4g
+    
     ports:
-      - "1935:1935/tcp"    # RTMP server (GoPro/Moblin send here)
+      - "1935:1935/tcp"    # RTMP ingest
       - "8080:8080/tcp"    # RTMP stats
+      
     volumes:
       - ./data/recordings:/recordings
-      - ./config/nginx.conf:/etc/nginx/nginx.conf
+      - ./config/nginx-optimized.conf:/etc/nginx/nginx.conf
+      - /dev/dri:/dev/dri:rw  # GPU access
+    
     networks:
       - streaming-network
 
-  # Image 3: Supabase Realtime (PostgreSQL + Real-time streaming management)
+  # REALTIME Database - Optimized
   supabase-realtime:
     build: ./containers/postgres-elixir
     container_name: supabase-realtime
     restart: unless-stopped
+    
+    # PERFORMANCE
+    cpuset: "12-15"  # Separate cores
+    mem_limit: 4g
+    
     ports:
-      - "5433:5432"    # PostgreSQL (FIXED PORT CONFLICT)
-      - "4000:4000"    # Realtime API + WebSocket
+      - "5433:5432"    # PostgreSQL
+      - "4000:4000"    # Realtime API
+      
     environment:
-      # Database config - KEEP INTERNAL PORT AS 5432
+      # Database optimizations
       - DATABASE_URL=postgres://realtime:realtime_pass_2024@localhost:5432/realtime_dev
       - DB_HOST=localhost
       - DB_PORT=5432
       - DB_USER=realtime
       - DB_PASSWORD=realtime_pass_2024
       - DB_NAME=realtime_dev
+      
+      # High-performance settings
+      - ELIXIR_ERL_OPTIONS="+hmax 1000000000 +hmaxel 1000000000"
+      - ERL_MAX_PORTS=65536
+      - ERL_MAX_ETS_TABLES=50000
       
       # Realtime config
       - SECRET_KEY_BASE=your_secret_key_change_in_production_make_it_very_long
@@ -57,15 +111,18 @@ services:
       - PHX_HOST=localhost
       - PHX_SERVER=true
       
-      # Streaming hub config
+      # Streaming hub config - CORRECTED PORTS
       - ENABLE_CAMERA_MANAGEMENT=true
-      - SRT_STATS_URL=http://srt-server:3000/stats
+      - SRT_STATS_URL=http://192.168.50.194:8080/stats  # Direct IP since using host networking
       - RTMP_STATS_URL=http://rtmp-server:8080/stat
+      
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
       - ./data/realtime:/app/data
+      # Performance optimizations
+      - /dev/shm:/dev/shm:rw  # Shared memory for performance
+      
     depends_on:
-      - srt-server
       - rtmp-server
     networks:
       - streaming-network
@@ -73,3 +130,7 @@ services:
 networks:
   streaming-network:
     driver: bridge
+    driver_opts:
+      # High-performance networking
+      com.docker.network.bridge.name: br-streaming
+      com.docker.network.driver.mtu: 9000  # Jumbo frames for 10Gig
