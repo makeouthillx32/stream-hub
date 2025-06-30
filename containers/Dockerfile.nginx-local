@@ -1,0 +1,31 @@
+# Custom NGINX RTMP - Built from local extracted files
+FROM debian:bullseye-slim
+
+# Copy the extracted filesystem from the nginx-rtmp-docker directory
+COPY nginx-rtmp-docker/ /
+
+# Set proper permissions
+RUN chmod +x /usr/sbin/nginx && \
+    chmod +x /bin/* && \
+    chmod +x /sbin/* || true
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create nginx user and directories
+RUN useradd --system --no-create-home --shell /bin/false nginx && \
+    mkdir -p /var/log/nginx /var/cache/nginx /tmp/hls && \
+    chown -R nginx:nginx /var/log/nginx /var/cache/nginx /tmp/hls
+
+# Create recordings directory
+RUN mkdir -p /recordings && chown nginx:nginx /recordings
+
+# Expose ports
+EXPOSE 1935 8080
+
+# Start nginx
+CMD ["/usr/sbin/nginx", "-g", "daemon off;"]

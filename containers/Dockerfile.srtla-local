@@ -1,0 +1,28 @@
+# Custom SRTLA Receiver - Built from local extracted files
+FROM alpine:latest
+
+# Copy the extracted filesystem from the srtla-receiver directory
+COPY srtla-receiver/ /
+
+# Set proper permissions for binaries
+RUN chmod +x /usr/local/bin/* && \
+    chmod +x /bin/* && \
+    chmod +x /sbin/* || true
+
+# Install runtime dependencies (based on Alpine)
+RUN apk add --no-cache \
+    supervisor \
+    logrotate \
+    tzdata
+
+# Create necessary directories
+RUN mkdir -p /tmp/sls /var/log/supervisord
+
+# Set working directory
+WORKDIR /
+
+# Expose ports
+EXPOSE 5000/udp 4001/udp 8080/tcp
+
+# Use supervisor to manage processes
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
