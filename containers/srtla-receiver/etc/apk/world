@@ -1,0 +1,11 @@
+alpine-baselayout
+alpine-keys
+apk-tools
+busybox
+coreutils
+libc-utils
+libstdc++
+openssl
+perl
+spdlog
+supervisor

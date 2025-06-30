@@ -1,28 +1,64 @@
 # Custom SRTLA Receiver - Built from local extracted files
 FROM alpine:latest
 
-# Copy the extracted filesystem from the srtla-receiver directory
-COPY srtla-receiver/ /
-
-# Set proper permissions for binaries
-RUN chmod +x /usr/local/bin/* && \
-    chmod +x /bin/* && \
-    chmod +x /sbin/* || true
-
-# Install runtime dependencies (based on Alpine)
+# Install runtime dependencies first
 RUN apk add --no-cache \
     supervisor \
     logrotate \
-    tzdata
+    tzdata \
+    bash
+
+# Copy the extracted filesystem from the srtla-receiver directory
+COPY srtla-receiver/ /
+
+# Debug available binaries and fix paths
+RUN echo "=== Available binaries ===" && \
+    find /usr/local/bin -type f 2>/dev/null | head -10 && \
+    find /usr/bin -name "*sls*" 2>/dev/null && \
+    find /usr/local/bin -name "*sls*" 2>/dev/null && \
+    find / -name "*stats*" -type f 2>/dev/null | grep -v proc | head -5 && \
+    echo "=== Done debugging ==="
 
 # Create necessary directories
-RUN mkdir -p /tmp/sls /var/log/supervisord
+RUN mkdir -p /tmp/sls /var/log/supervisor /var/run && \
+    chmod 755 /tmp/sls /var/log/supervisor /var/run
+
+# Debug and fix supervisord.conf
+RUN echo "=== Debugging supervisord.conf ===" && \
+    ls -la /etc/ | grep supervisor || echo "No supervisord files in /etc/" && \
+    find /etc -name "*supervisor*" 2>/dev/null || echo "No supervisor files found" && \
+    echo "=== Creating working supervisord.conf ===" && \
+    mkdir -p /var/log/supervisor && \
+    cat > /etc/supervisord.conf <<'EOF'
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:sls]
+command=/usr/local/bin/sls -c /etc/sls/sls.conf
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/supervisor/sls.err.log
+stdout_logfile=/var/log/supervisor/sls.out.log
+
+[program:stats-server]
+command=/usr/local/bin/stats-server
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/supervisor/stats.err.log
+stdout_logfile=/var/log/supervisor/stats.out.log
+EOF
 
 # Set working directory
 WORKDIR /
 
 # Expose ports
 EXPOSE 5000/udp 4001/udp 8080/tcp
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD pgrep supervisord || exit 1
 
 # Use supervisor to manage processes
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

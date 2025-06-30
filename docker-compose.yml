@@ -1,9 +1,9 @@
-version: '3.8'
-
 services:
-  # SRT Server - Use original image but with local configs
+  # SRT Server - BUILD from local extracted files
   srt-server:
-    image: ghcr.io/openirl/srtla-receiver:latest
+    build:
+      context: ./containers
+      dockerfile: Dockerfile.srtla-local
     container_name: srt-server-hybrid
     restart: unless-stopped
     
@@ -16,11 +16,6 @@ services:
       - "8177:4001/udp"    # SRT ingest/output
       - "8277:8080/tcp"    # HTTP stats
     
-    # Mount your extracted configs for customization
-    volumes:
-      - ./containers/srtla-receiver/etc/sls:/etc/sls:ro
-      - ./containers/srtla-receiver/etc/supervisord.conf:/etc/supervisord.conf:ro
-    
     environment:
       - PUID=1000
       - PGID=1000
@@ -28,9 +23,11 @@ services:
     networks:
       - streaming-network
 
-  # RTMP Server - Use original image but with local configs
+  # RTMP Server - BUILD from local extracted files
   rtmp-server:
-    image: tiangolo/nginx-rtmp:latest
+    build:
+      context: ./containers
+      dockerfile: Dockerfile.nginx-local
     container_name: rtmp-server-hybrid
     restart: unless-stopped
     
@@ -45,8 +42,6 @@ services:
     volumes:
       - ./data/recordings:/recordings
       - ./config/nginx-optimized.conf:/etc/nginx/nginx.conf
-      # Mount extracted nginx configs for reference/customization
-      - ./containers/nginx-rtmp-docker/etc/nginx:/etc/nginx-original:ro
       
     networks:
       - streaming-network
